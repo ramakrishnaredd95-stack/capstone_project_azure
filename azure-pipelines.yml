@@ -1,0 +1,105 @@
+# Docker
+# Build a Docker image
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger: 
+- main
+
+variables:
+ imageName: flipkartapp
+ acrName: acregistry121 
+ aksName: flipkartaks
+ rgName : rgaks
+
+stages:
+- stage: Build 
+  displayName: BuildAndPush Docker Image
+  jobs:
+    - job: DockerBuild 
+      displayName: DockerBuildJob
+      pool: 
+       vmImage: ubuntu-latest
+      
+      steps:
+      - task: Docker@2
+        inputs:
+         command: 'buildAndPush'
+         containerRegistry: 'az-containerRegistry-sc'
+         repository: 'flipkartapp'
+         Dockerfile: '**/Dockerfile'
+         tags: latest
+
+- stage: Terraform
+  dependsOn: Build
+  jobs:
+  - job: Infra
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: TerraformInstaller@1
+      inputs:
+        terraformVersion: '1.6.0'
+
+    - task: TerraformTaskV4@4
+      displayName: Terraform Init
+      inputs:
+        provider: azurerm
+        command: init
+        backendServiceArm: fkapp-capstone-seviceconnection
+        backendAzureRmResourceGroupName: AZ-Storage-RSG
+        backendAzureRmStorageAccountName: azstoragecontainer
+        backendAzureRmContainerName: tfstate
+        backendAzureRmKey: aks.terraform
+        commandOptions: "-reconfigure"
+        workingDirectory: terraform
+
+    - task: TerraformTaskV4@4
+      inputs:
+        provider: azurerm
+        command: apply
+        commandOptions: '--auto-approve'
+        environmentServiceNameAzureRM: fkapp-capstone-seviceconnection
+        workingDirectory: terraform
+
+- stage: Deploy
+  dependsOn: Terraform
+  jobs:
+    - job: Deploy
+      pool: 
+       vmImage: ubuntu-latest
+      steps: 
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: 'fkapp-capstone-seviceconnection'
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            echo "Checking AKS availability..."
+            
+                      until az aks get-credentials --resource-group $(rgName) --name $(aksName) --overwrite-existing 2>/dev/null; do
+                        echo "AKS not ready yet..."
+                        sleep 10
+                      done
+            
+                      echo "AKS connected"
+            
+                      until kubectl get nodes | grep Ready; do
+                        echo "Waiting for nodes..."
+                        sleep 10
+                      done
+            
+                      echo "Nodes ready"
+            
+                      kubectl apply -f K8s/
+                      kubectl rollout status deployment/flipkart-app
+            
+                      kubectl get pods
+                      kubectl get svc
+            
+                      while [ -z "$(kubectl get svc flipkart-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" ]; do
+                        echo "Waiting for LoadBalancer IP..."
+                        sleep 10
+                      done
+            
+                      LB_IP=$(kubectl get svc flipkart-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                      echo "APPLICATION URL: http://$LB_IP"

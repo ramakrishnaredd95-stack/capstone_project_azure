@@ -1,0 +1,14 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Visual Studio
+.vs/
+bin/
+obj/
+
+# OS
+.DS_Store
+Thumbs.db
