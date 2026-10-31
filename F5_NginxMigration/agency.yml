@@ -6,3 +6,5 @@ metadata:
   labels:
     app: agency
     version: v1
+    environment: production
+    
