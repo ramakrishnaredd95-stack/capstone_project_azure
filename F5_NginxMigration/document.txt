@@ -1,0 +1,1 @@
+New file created in the nginx migration project directory. This file will contain important documentation related to the migration process from F5 to Nginx. It will include steps, configurations, and best practices to ensure a smooth transition.
